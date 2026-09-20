@@ -9,6 +9,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -849,6 +850,9 @@ async function initApp() {
         window.addEventListener('offline', () => setSyncStatus('offline'));
         setSyncStatus(navigator.onLine === false ? 'offline' : 'connecting');
 
+        // تسجيل دخول صامت (بدون كلمة مرور مرئية) — يسمح لقواعد الأمان بمنع أي طلب لا يأتي من هذا التطبيق
+        await firebase.auth().signInAnonymously();
+
         // مزامنة فورية للملفات: أي تغيير من الحاسوب أو الهاتف ينعكس تلقائياً على الجميع
         FILES_COL.onSnapshot(snap => {
             files = snap.docs.map(d => d.data());
@@ -868,7 +872,7 @@ async function initApp() {
         }, err => console.error(err));
 
         setInterval(checkUpcomingAppointments, 60000);
-    } catch(e) { showToast('❌','خطأ في الاتصال بقاعدة البيانات',true); }
+    } catch(e) { console.error(e); showToast('❌','خطأ في الاتصال بقاعدة البيانات',true); }
 }
 
 // ===== حفظ/حذف المرفقات داخل Firestore نفسه (بدون Storage، بدون بطاقة بنكية) =====
