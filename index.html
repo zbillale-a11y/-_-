@@ -540,6 +540,63 @@
                 </div>
                 <div class="pagination" id="pagination"></div>
             </div>
+
+            <!-- COMMITTEE DECISIONS SECTION (08/15) -->
+            <div class="table-card" style="margin-top:24px;">
+                <div class="table-header">
+                    <div class="table-title">📜 سجل مقررات اللجنة (08/15) (<span id="decisionsCount">0</span>)</div>
+                    <button class="btn btn-add" onclick="openDecisionModal()">➕ إضافة مقرر</button>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>رقم المقرر</th><th>اسم المعني</th><th>التاريخ</th><th>الملف المرتبط</th><th>الإجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="decisionsTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- DECISION MODAL -->
+        <div class="modal" id="decisionModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 id="decisionModalTitle">📜 إضافة مقرر جديد</h2>
+                    <button class="modal-close" onclick="closeDecisionModal()">✕</button>
+                </div>
+                <form id="decisionForm" onsubmit="saveDecision(event)">
+                    <div class="modal-body">
+                        <input type="hidden" id="decisionId">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label class="form-label">رقم المقرر *</label>
+                                <input class="form-input" id="decisionNumber" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">اسم المعني *</label>
+                                <input class="form-input" id="decisionPersonName" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">التاريخ *</label>
+                                <input class="form-input" type="date" id="decisionDate" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">الملف المرتبط (اختياري)</label>
+                                <select class="form-select" id="decisionLinkedFile">
+                                    <option value="">غير مرتبط بعد</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-cancel" onclick="closeDecisionModal()">إلغاء</button>
+                        <button type="submit" class="btn btn-add">💾 حفظ المقرر</button>
+                    </div>
+                </form>
+            </div>
         </div>
 
         <!-- APPOINTMENTS PAGE -->
@@ -853,10 +910,11 @@ try { fsdb.enablePersistence({ synchronizeTabs: true }).catch(()=>{}); } catch(e
 const FILES_COL = fsdb.collection('files');
 const APPTS_COL = fsdb.collection('appointments');
 const NOTIFS_COL = fsdb.collection('notifications');
+const DECISIONS_COL = fsdb.collection('decisions');
 const ATTACHMENTS_COL = fsdb.collection('attachments');
 
 let files = [], currentEditId = null, currentAttachments = [], currentFilteredFiles = [];
-let appts = [], notifs = [];
+let appts = [], notifs = [], decisions = [];
 let currentPage = 1; const PAGE_SIZE = 20;
 const MAX_ATTACHMENT_BYTES = 700 * 1024; // حد أمان قبل الترميز، حتى لا يتجاوز حجم مستند Firestore (1 ميغا)
 
@@ -892,6 +950,11 @@ async function initApp() {
         NOTIFS_COL.onSnapshot(snap => {
             notifs = snap.docs.map(d => d.data());
             renderNotifs();
+        }, err => console.error(err));
+
+        DECISIONS_COL.onSnapshot(snap => {
+            decisions = snap.docs.map(d => d.data());
+            renderDecisions();
         }, err => console.error(err));
 
         setInterval(checkUpcomingAppointments, 60000);
@@ -1040,6 +1103,76 @@ async function markAllRead() {
 async function addNotification(title, text, type='info') {
     const notif = {id:Date.now().toString(),title,text,type,read:false,createdAt:new Date().toISOString()};
     await saveNotifToDB(notif); renderNotifs();
+}
+
+// ===== سجل مقررات اللجنة (08/15) — مرتبط برقم الملف =====
+function renderDecisions() {
+    const body = document.getElementById('decisionsTableBody');
+    const countEl = document.getElementById('decisionsCount');
+    if (!body) return;
+    countEl.textContent = decisions.length;
+    if (decisions.length === 0) { body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text2);padding:20px;">لا توجد مقررات مسجلة</td></tr>'; return; }
+    const sorted = [...decisions].sort((a,b) => (b.date||'').localeCompare(a.date||''));
+    body.innerHTML = sorted.map(d => `<tr>
+        <td>${d.decisionNumber}</td>
+        <td>${d.personName}</td>
+        <td>${d.date || '-'}</td>
+        <td>${d.linkedFileNumber ? `<span style="cursor:pointer;color:var(--accent2);text-decoration:underline;" onclick="jumpToFile('${d.linkedFileNumber}')">${d.linkedFileNumber}</span>` : '<span style="color:var(--text2);">غير مرتبط</span>'}</td>
+        <td>
+            <button class="action-btn" title="تعديل" onclick="openDecisionModal('${d.id}')">✏️</button>
+            <button class="action-btn" title="حذف" onclick="deleteDecision('${d.id}')">🗑️</button>
+        </td>
+    </tr>`).join('');
+}
+
+function jumpToFile(fileNumber) {
+    document.getElementById('searchInput').value = fileNumber;
+    applyFilters();
+    document.getElementById('page-files').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function openDecisionModal(id) {
+    const select = document.getElementById('decisionLinkedFile');
+    const currentVal = id ? (decisions.find(d=>d.id===id)?.linkedFileNumber || '') : '';
+    select.innerHTML = '<option value="">غير مرتبط بعد</option>' +
+        files.map(f => `<option value="${f.number}" ${f.number===currentVal?'selected':''}>${f.number} — ${f.personName}</option>`).join('');
+    if (id) {
+        const d = decisions.find(x => x.id === id); if (!d) return;
+        document.getElementById('decisionModalTitle').textContent = '✏️ تعديل مقرر';
+        document.getElementById('decisionId').value = d.id;
+        document.getElementById('decisionNumber').value = d.decisionNumber;
+        document.getElementById('decisionPersonName').value = d.personName;
+        document.getElementById('decisionDate').value = d.date || '';
+    } else {
+        document.getElementById('decisionModalTitle').textContent = '📜 إضافة مقرر جديد';
+        document.getElementById('decisionForm').reset();
+        document.getElementById('decisionId').value = '';
+    }
+    document.getElementById('decisionModal').classList.add('active');
+}
+
+function closeDecisionModal() { document.getElementById('decisionModal').classList.remove('active'); }
+
+async function saveDecision(e) {
+    e.preventDefault();
+    const id = document.getElementById('decisionId').value || Date.now().toString();
+    const decisionData = {
+        id,
+        decisionNumber: document.getElementById('decisionNumber').value,
+        personName: document.getElementById('decisionPersonName').value,
+        date: document.getElementById('decisionDate').value,
+        linkedFileNumber: document.getElementById('decisionLinkedFile').value || null,
+        updatedAt: new Date().toISOString()
+    };
+    try { await DECISIONS_COL.doc(String(id)).set(decisionData); closeDecisionModal(); showToast('✅','تم حفظ المقرر'); }
+    catch(e) { showToast('❌','خطأ في حفظ المقرر',true); }
+}
+
+function deleteDecision(id) {
+    showConfirm('🗑️','حذف المقرر','هل تريد حذف هذا المقرر نهائياً؟', async () => {
+        try { await DECISIONS_COL.doc(String(id)).delete(); showToast('🗑️','تم الحذف'); }
+        catch(e) { showToast('❌','خطأ في الحذف',true); }
+    });
 }
 
 function formatTimeAgo(iso) {
